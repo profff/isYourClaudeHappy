@@ -1,0 +1,24 @@
+{
+    "_comment": "Mood Gauge configuration - modes: off | basic | full",
+    "mode": "full",
+    "display": {
+        "bar_width": 6,
+        "show_context": true,
+        "show_label": true,
+        "color_enabled": true
+    },
+    "thresholds": {
+        "context_warning": 70,
+        "context_critical": 85,
+        "fatigue_minutes": 45,
+        "failure_streak_threshold": 3
+    },
+    "decay": {
+        "valence_toward_zero_per_minute": 0.005,
+        "arousal_toward_baseline_per_minute": 0.008,
+        "arousal_baseline": 0.3
+    },
+    "cleanup": {
+        "max_session_age_hours": 48
+    }
+}
