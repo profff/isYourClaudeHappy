@@ -49,22 +49,22 @@ def SL_BuildBar(pct: float, width: int, color: bool) -> str:
 def SL_RenderBasic(contextPct: int, config: dict) -> str:
     """Basic mode: derive mood from context% alone."""
     if contextPct < 40:
-        face, label = "(-.-)", "Calme"
+        face, label = "(-.-)", "Calm"
     elif contextPct < 65:
-        face, label = "(^.^)", "Productif"
+        face, label = "(^.^)", "Productive"
     elif contextPct < 80:
-        face, label = "(-_-)", "Concentre"
+        face, label = "(-_-)", "Focused"
     elif contextPct < 90:
-        face, label = "(>_<)", "Sature"
+        face, label = "(>_<)", "Saturated"
     else:
-        face, label = "(x_x)", "Epuise"
+        face, label = "(x_x)", "Exhausted"
     return face, label
 
 
 def SL_RenderFull(sessionId: str, contextPct: int, statusData: dict,
                   config: dict) -> tuple[str, str]:
     """Full mode: read state file, recompute mood with real context%."""
-    face, label = "(-.-)", "Calme"
+    face, label = "(-.-)", "Calm"
     if not sessionId:
         return face, label
 

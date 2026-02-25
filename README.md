@@ -5,11 +5,11 @@ A mood indicator for [Claude Code](https://docs.anthropic.com/en/docs/claude-cod
 Observable signals from your coding session (tool success/failure rate, context window saturation, productivity, compaction events) are mapped onto two psychological dimensions to produce a simulated mood state displayed in real time.
 
 ```
-(^_^) [████░░] Enthousiaste | ctx 23%     <- things are going well
-(-_-) [███░░░] Concentre    | ctx 58%     <- steady work
-(>_<) [█████░] Sature       | ctx 87%     <- context window pressure
-(~_~) [██░░░░] Fatigue      | ctx 45%     <- long session, low activity
-(O_O) [████░░] Anxieux      | ctx 62%     <- lots of tool failures
+(^_^) [████░░] Excited      | ctx 23%     <- things are going well
+(-_-) [███░░░] Serene       | ctx 58%     <- steady work
+(>_<) [█████░] Anxious      | ctx 87%     <- context window pressure
+(~_~) [██░░░░] Tired        | ctx 45%     <- long session, low activity
+(O_O) [████░░] Frustrated   | ctx 62%     <- lots of tool failures
 ```
 
 ## How it works
@@ -18,8 +18,8 @@ Observable signals from your coding session (tool success/failure rate, context 
 
 |  | High Arousal | Low Arousal |
 |---|---|---|
-| **Positive Valence** | Survolte, Enthousiaste, Productif | Zen, Serein, Calme |
-| **Negative Valence** | Agace, Frustre, Anxieux | Fatigue, Morose, Epuise |
+| **Positive Valence** | Thrilled, Excited, Productive | Zen, Serene, Calm |
+| **Negative Valence** | Annoyed, Frustrated, Anxious | Tired, Gloomy, Exhausted |
 
 **Valence** (pleasant <-> unpleasant) is driven by:
 - Tool call success/failure ratio (strongest signal)
@@ -44,8 +44,8 @@ Mood transitions are smoothed with exponential decay and blending (70% fresh + 3
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/claude-mood-gauge.git
-cd claude-mood-gauge
+git clone https://github.com/profff/isYourClaudeHappy.git
+cd isYourClaudeHappy
 
 # Install hooks + statusline into Claude Code settings
 python mood/mood_setup.py install

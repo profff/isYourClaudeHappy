@@ -48,7 +48,7 @@ def _newState(sessionId: str) -> dict:
         "mood": {
             "valence": 0.0,
             "arousal": 0.3,
-            "label": "Calme",
+            "label": "Calm",
             "face": "(-.-)",
             "last_computed_at": now,
         },

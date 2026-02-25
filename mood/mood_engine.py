@@ -19,24 +19,24 @@ from typing import Tuple
 # Sorted descending by threshold within each quadrant
 MOOD_LABELS = {
     "pv_ha": [  # positive valence, high arousal
-        (0.7, "Survolte", "(^O^)"),
-        (0.4, "Enthousiaste", "(^_^)"),
-        (0.0, "Productif", "(^.^)"),
+        (0.7, "Thrilled", "(^O^)"),
+        (0.4, "Excited", "(^_^)"),
+        (0.0, "Productive", "(^.^)"),
     ],
     "pv_la": [  # positive valence, low arousal
         (0.7, "Zen", "(-v-)"),
-        (0.4, "Serein", "(-_-)"),
-        (0.0, "Calme", "(-.-)"),
+        (0.4, "Serene", "(-_-)"),
+        (0.0, "Calm", "(-.-)"),
     ],
     "nv_ha": [  # negative valence, high arousal
-        (-0.2, "Agace", "(>_<)"),
-        (-0.5, "Frustre", "(#_#)"),
-        (-1.0, "Anxieux", "(O_O)"),
+        (-0.2, "Annoyed", "(>_<)"),
+        (-0.5, "Frustrated", "(#_#)"),
+        (-1.0, "Anxious", "(O_O)"),
     ],
     "nv_la": [  # negative valence, low arousal
-        (-0.2, "Fatigue", "(~_~)"),
-        (-0.5, "Morose", "(-.-')"),
-        (-1.0, "Epuise", "(x_x)"),
+        (-0.2, "Tired", "(~_~)"),
+        (-0.5, "Gloomy", "(-.-')"),
+        (-1.0, "Exhausted", "(x_x)"),
     ],
 }
 
