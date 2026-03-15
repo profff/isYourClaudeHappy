@@ -40,6 +40,14 @@ def _shareContextInfo(ctxWindow: dict, sessionId: str):
     try:
         CONTEXT_SHARE_DIR.mkdir(parents=True, exist_ok=True)
         sharePath = CONTEXT_SHARE_DIR / f"{sessionId}.json"
+        # Preserve existing overrides from context guard
+        existing = {}
+        if sharePath.exists():
+            try:
+                with open(sharePath, encoding="utf-8") as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
         info = {
             "session_id": sessionId,
             "used_percentage": ctxWindow.get("used_percentage", 0),
@@ -47,6 +55,10 @@ def _shareContextInfo(ctxWindow: dict, sessionId: str):
             "max_tokens": ctxWindow.get("max_tokens", 0),
             "updated_at": time.time(),
         }
+        # Keep session overrides
+        for key in ("override_warn_pct", "override_block_pct"):
+            if key in existing:
+                info[key] = existing[key]
         # Atomic write
         fd, tmpPath = tempfile.mkstemp(suffix=".tmp",
                                        dir=str(CONTEXT_SHARE_DIR))
