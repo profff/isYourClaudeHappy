@@ -30,6 +30,33 @@ C_DIM = "\033[2m"
 C_RESET = "\033[0m"
 
 
+CONTEXT_SHARE_DIR = Path.home() / ".claude" / "context_guard"
+
+
+def _shareContextInfo(ctxWindow: dict, sessionId: str):
+    """Write context info to per-session file for Context Guard hook."""
+    if not ctxWindow or not sessionId:
+        return
+    try:
+        CONTEXT_SHARE_DIR.mkdir(parents=True, exist_ok=True)
+        sharePath = CONTEXT_SHARE_DIR / f"{sessionId}.json"
+        info = {
+            "session_id": sessionId,
+            "used_percentage": ctxWindow.get("used_percentage", 0),
+            "total_tokens": ctxWindow.get("total_tokens", 0),
+            "max_tokens": ctxWindow.get("max_tokens", 0),
+            "updated_at": time.time(),
+        }
+        # Atomic write
+        fd, tmpPath = tempfile.mkstemp(suffix=".tmp",
+                                       dir=str(CONTEXT_SHARE_DIR))
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(info, f)
+        os.replace(tmpPath, str(sharePath))
+    except Exception:
+        pass
+
+
 def SL_BuildBar(pct: float, width: int, color: bool) -> str:
     """Build a colored progress bar from a percentage [0-100]."""
     filled = max(0, min(width, round(pct / 100.0 * width)))
@@ -140,6 +167,9 @@ def SL_Render(statusData: dict, config: dict) -> str:
     ctxWindow = statusData.get("context_window", {})
     rawPct = ctxWindow.get("used_percentage")
     contextPct = int(rawPct) if rawPct is not None else 0
+
+    # Share context info for Context Guard hook
+    _shareContextInfo(ctxWindow, statusData.get("session_id", ""))
 
     sessionId = statusData.get("session_id", "")
 
