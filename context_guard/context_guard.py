@@ -165,7 +165,8 @@ def hookMain():
     except (json.JSONDecodeError, ValueError):
         return
 
-    if hookInput.get("hook_event_name") != "UserPromptSubmit":
+    event = hookInput.get("hook_event_name", "")
+    if event not in ("UserPromptSubmit", "PostToolUse"):
         return
 
     config = CTXG_LoadConfig()
@@ -190,29 +191,44 @@ def hookMain():
     warnPct = sessionInfo.get("override_warn_pct", config["warn_pct"])
     blockPct = sessionInfo.get("override_block_pct", config["block_pct"])
 
-    if level == "block":
-        print(json.dumps({
-            "decision": "block",
-            "reason": (
-                f"Context Guard: context at {usedPct}% "
-                f"(limit: {blockPct}%). "
-                f"Run /compact to continue."
-            ),
-        }))
+    if event == "UserPromptSubmit":
+        # Can block before prompt is processed (cheapest)
+        if level == "block":
+            print(json.dumps({
+                "decision": "block",
+                "reason": (
+                    f"Context Guard: context at {usedPct}% "
+                    f"(limit: {blockPct}%). "
+                    f"Run /compact to continue."
+                ),
+            }))
+        elif level == "warn":
+            print(json.dumps({
+                "additionalContext": (
+                    f"[CONTEXT GUARD] Context at {usedPct}% "
+                    f"(warn: {warnPct}%, block: {blockPct}%). "
+                    f"Consider running /compact soon. "
+                    f"Briefly mention this to the user."
+                ),
+                "systemMessage": (
+                    f"Context Guard: {usedPct}% "
+                    f"(warn: {warnPct}%, block: {blockPct}%)"
+                ),
+            }))
 
-    elif level == "warn":
-        print(json.dumps({
-            "additionalContext": (
-                f"[CONTEXT GUARD] Context at {usedPct}% "
-                f"(warn: {warnPct}%, block: {blockPct}%). "
-                f"Consider running /compact soon. "
-                f"Briefly mention this to the user."
-            ),
-            "systemMessage": (
-                f"Context Guard: {usedPct}% "
-                f"(warn: {warnPct}%, block: {blockPct}%)"
-            ),
-        }))
+    elif event == "PostToolUse":
+        # Mid-turn safety net — can only warn, not block
+        if level == "block":
+            print(json.dumps({
+                "additionalContext": (
+                    f"[CONTEXT GUARD - URGENT] Context at {usedPct}% "
+                    f"(over {blockPct}% limit). "
+                    f"STOP current work and ask the user to run /compact immediately."
+                ),
+                "systemMessage": (
+                    f"Context Guard: {usedPct}% - OVER LIMIT"
+                ),
+            }))
 
     CTXG_CleanupOldFiles()
 
