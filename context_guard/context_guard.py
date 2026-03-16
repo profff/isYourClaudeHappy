@@ -173,6 +173,11 @@ def hookMain():
     if not config["enabled"]:
         return
 
+    # Bypass: let /ctxguard through (needs to run even when blocked)
+    prompt = hookInput.get("prompt", "")
+    if event == "UserPromptSubmit" and prompt.strip().startswith("/ctxguard"):
+        return
+
     sessionId = hookInput.get("session_id", "")
     if not sessionId:
         return
@@ -180,6 +185,17 @@ def hookMain():
     sessionInfo = CTXG_ReadSessionInfo(sessionId)
     if sessionInfo is None:
         return
+
+    # Stale detection: if transcript was modified AFTER the session file,
+    # context likely changed (e.g. /compact) and our info is outdated → skip.
+    transcriptPath = hookInput.get("transcript_path", "")
+    if transcriptPath and sessionInfo.get("updated_at"):
+        try:
+            transcriptMtime = Path(transcriptPath).stat().st_mtime
+            if transcriptMtime > sessionInfo["updated_at"]:
+                return  # session info is stale, let it through
+        except OSError:
+            pass
 
     usedPct = sessionInfo.get("used_percentage", 0)
     if usedPct <= 0:
@@ -278,37 +294,37 @@ def cliMain():
         print("Context Guard disabled.")
 
     elif cmd == "set" and len(args) >= 3:
-        config = CTXG_LoadConfig()
-        param, value = args[1].lower(), int(args[2])
-        if param == "warn":
-            config["warn_pct"] = value
-            print(f"Warn threshold: {value}%")
-        elif param == "block":
-            config["block_pct"] = value
-            print(f"Block threshold: {value}%")
-        else:
+        # Detect scope: set [this|all] warn|block <pct>
+        # "set block 20"       → global only
+        # "set this block 20"  → current session override only
+        # "set all block 20"   → global + clear all session overrides
+        scope = "global"
+        paramIdx = 1
+        if args[1].lower() in ("this", "all"):
+            scope = args[1].lower()
+            paramIdx = 2
+        if len(args) < paramIdx + 2:
+            print("Usage: set [this|all] warn|block <pct>")
+            return
+        param = args[paramIdx].lower()
+        value = int(args[paramIdx + 1].rstrip("%"))
+        if param not in ("warn", "block"):
             print(f"Unknown param: {param}. Use 'warn' or 'block'.")
             return
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
 
-    elif cmd == "session" and len(args) >= 3:
-        # /ctxguard session <session_id> [warn <pct>] [block <pct>] [reset]
-        sid = args[1]
-        if args[2].lower() == "reset":
-            sharePath = CONTEXT_SHARE_DIR / f"{sid}.json"
-            if sharePath.exists():
-                with open(sharePath, encoding="utf-8") as f:
-                    info = json.load(f)
-                info.pop("override_warn_pct", None)
-                info.pop("override_block_pct", None)
-                with open(sharePath, "w", encoding="utf-8") as f:
-                    json.dump(info, f)
-                print(f"Session overrides cleared for {sid[:8]}...")
-            else:
-                print(f"No session file for {sid[:8]}...")
-        elif len(args) >= 4:
-            param, value = args[2].lower(), int(args[3])
+        if scope == "this":
+            # Current session only — need session_id from env
+            sid = os.environ.get("CLAUDE_SESSION_ID", "")
+            if not sid:
+                # Try to find the most recent session file
+                if CONTEXT_SHARE_DIR.exists():
+                    files = sorted(CONTEXT_SHARE_DIR.glob("*.json"),
+                                   key=lambda f: f.stat().st_mtime, reverse=True)
+                    if files:
+                        sid = files[0].stem
+                if not sid:
+                    print("Cannot determine current session. Use 'set' (global) instead.")
+                    return
             warnPct = value if param == "warn" else None
             blockPct = value if param == "block" else None
             if CTXG_SetSessionOverride(sid, warnPct=warnPct, blockPct=blockPct):
@@ -316,12 +332,53 @@ def cliMain():
             else:
                 print("Failed to set override.")
 
+        elif scope == "all":
+            # Global + clear all session overrides
+            config = CTXG_LoadConfig()
+            if param == "warn":
+                config["warn_pct"] = value
+            else:
+                config["block_pct"] = value
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            # Clear all session overrides
+            cleared = 0
+            if CONTEXT_SHARE_DIR.exists():
+                for sf in CONTEXT_SHARE_DIR.glob("*.json"):
+                    try:
+                        info = json.loads(sf.read_text(encoding="utf-8"))
+                        changed = False
+                        if param == "warn" and "override_warn_pct" in info:
+                            info.pop("override_warn_pct")
+                            changed = True
+                        if param == "block" and "override_block_pct" in info:
+                            info.pop("override_block_pct")
+                            changed = True
+                        if changed:
+                            with open(sf, "w", encoding="utf-8") as f:
+                                json.dump(info, f)
+                            cleared += 1
+                    except (json.JSONDecodeError, OSError):
+                        pass
+            print(f"Global {param}: {value}% — cleared {cleared} session override(s)")
+
+        else:
+            # Global only
+            config = CTXG_LoadConfig()
+            if param == "warn":
+                config["warn_pct"] = value
+            else:
+                config["block_pct"] = value
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            print(f"Global {param} threshold: {value}%")
+
     else:
         print("Usage:")
-        print("  /ctxguard status                       — show config + sessions")
-        print("  /ctxguard set warn|block <pct>         — set global threshold")
-        print("  /ctxguard session <id> warn|block <pct> — set per-session override")
-        print("  /ctxguard session <id> reset            — clear session overrides")
+        print("  /ctxguard status                        — show config + sessions")
+        print("  /ctxguard set warn|block <pct>          — set global threshold")
+        print("  /ctxguard set this warn|block <pct>     — set for current session only")
+        print("  /ctxguard set all warn|block <pct>      — set global + clear all overrides")
         print("  /ctxguard enable|disable                — toggle on/off")
 
 
