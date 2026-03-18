@@ -33,7 +33,7 @@ C_RESET = "\033[0m"
 CONTEXT_SHARE_DIR = Path.home() / ".claude" / "context_guard"
 
 
-def _shareContextInfo(ctxWindow: dict, sessionId: str):
+def _shareContextInfo(ctxWindow: dict, sessionId: str, modelId: str = ""):
     """Write context info to per-session file for Context Guard hook."""
     if not ctxWindow or not sessionId:
         return
@@ -48,11 +48,14 @@ def _shareContextInfo(ctxWindow: dict, sessionId: str):
                     existing = json.load(f)
             except (json.JSONDecodeError, OSError):
                 pass
+        totalTokens = (ctxWindow.get("total_input_tokens", 0) or 0) + \
+                      (ctxWindow.get("total_output_tokens", 0) or 0)
         info = {
             "session_id": sessionId,
             "used_percentage": ctxWindow.get("used_percentage", 0),
-            "total_tokens": ctxWindow.get("total_tokens", 0),
-            "max_tokens": ctxWindow.get("max_tokens", 0),
+            "total_tokens": totalTokens,
+            "max_tokens": ctxWindow.get("context_window_size", 0) or 0,
+            "model_id": modelId,
             "updated_at": time.time(),
         }
         # Keep session overrides
@@ -69,39 +72,45 @@ def _shareContextInfo(ctxWindow: dict, sessionId: str):
         pass
 
 
-def SL_BuildBar(pct: float, width: int, color: bool) -> str:
-    """Build a colored progress bar from a percentage [0-100]."""
+def SL_BuildBar(pct: float, width: int, color: bool,
+                 warnPct: float = 0, blockPct: float = 0) -> str:
+    """Build a colored progress bar with warn/block markers."""
     filled = max(0, min(width, round(pct / 100.0 * width)))
     empty = width - filled
 
     if color:
-        if pct >= 85:
+        if blockPct and pct >= blockPct:
+            c = C_RED
+        elif warnPct and pct >= warnPct:
+            c = C_YELLOW
+        elif pct >= 85:
             c = C_RED
         elif pct >= 60:
             c = C_YELLOW
         else:
             c = C_GREEN
-        return f"{c}{'█' * filled}{C_RESET}{'░' * empty}"
+
+        # Build bar with warn/block markers
+        bar = []
+        warnPos = round(warnPct / 100.0 * width) if warnPct else -1
+        blockPos = round(blockPct / 100.0 * width) if blockPct else -1
+        for i in range(width):
+            if i == blockPos:
+                bar.append(f"{C_RED}|{C_RESET}")
+            elif i == warnPos:
+                bar.append(f"{C_YELLOW}|{C_RESET}")
+            elif i < filled:
+                bar.append(f"{c}█{C_RESET}")
+            else:
+                bar.append("░")
+        return "".join(bar)
     return f"{'#' * filled}{'.' * empty}"
 
 
-def SL_RenderBasic(contextPct: int, config: dict) -> str:
-    """Basic mode: derive mood from context% alone."""
-    if contextPct < 40:
-        face, label = "(-.-)", "Calm"
-    elif contextPct < 65:
-        face, label = "(^.^)", "Productive"
-    elif contextPct < 80:
-        face, label = "(-_-)", "Focused"
-    elif contextPct < 90:
-        face, label = "(>_<)", "Saturated"
-    else:
-        face, label = "(x_x)", "Exhausted"
-    return face, label
 
 
 def SL_RenderFull(sessionId: str, contextPct: int, statusData: dict,
-                  config: dict) -> tuple[str, str]:
+                  config: dict, guardBlockPct: float = 0) -> tuple[str, str]:
     """Full mode: read state file, recompute mood with real context%."""
     face, label = "(-.-)", "Calm"
     if not sessionId:
@@ -121,6 +130,9 @@ def SL_RenderFull(sessionId: str, contextPct: int, statusData: dict,
             "total_lines_added", 0) or 0
         stateData["signals"]["lines_removed_snapshot"] = cost.get(
             "total_lines_removed", 0) or 0
+
+        # Inject guard block threshold for arousal normalization
+        stateData["signals"]["guard_block_pct"] = guardBlockPct
 
         stateData = MOOD_Update(stateData, contextPct, config)
         face = stateData["mood"]["face"]
@@ -181,22 +193,62 @@ def SL_Render(statusData: dict, config: dict) -> str:
     contextPct = int(rawPct) if rawPct is not None else 0
 
     # Share context info for Context Guard hook
-    _shareContextInfo(ctxWindow, statusData.get("session_id", ""))
+    modelInfo = statusData.get("model", {})
+    modelId = modelInfo.get("id", "") if isinstance(modelInfo, dict) else ""
+    _shareContextInfo(ctxWindow, statusData.get("session_id", ""), modelId)
 
     sessionId = statusData.get("session_id", "")
 
-    if mode == "basic":
-        face, label = SL_RenderBasic(contextPct, config)
-    else:
-        face, label = SL_RenderFull(sessionId, contextPct, statusData, config)
+    # Read guard thresholds for this session
+    warnPct, blockPct = 0, 0
+    if sessionId:
+        guardPath = CONTEXT_SHARE_DIR / f"{sessionId}.json"
+        try:
+            if guardPath.exists():
+                with open(guardPath, encoding="utf-8") as f:
+                    guardInfo = json.load(f)
+                guardCfgPath = Path.home() / ".claude" / "context_guard.json"
+                globalCfg = {}
+                if guardCfgPath.exists():
+                    with open(guardCfgPath, encoding="utf-8") as f:
+                        globalCfg = json.load(f)
+                warnPct = guardInfo.get("override_warn_pct", globalCfg.get("warn_pct", 0))
+                blockPct = guardInfo.get("override_block_pct", globalCfg.get("block_pct", 0))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Context-only mode: just the bar + tokens, no mood
+    if mode == "context":
+        bar = SL_BuildBar(contextPct, barWidth, colorEnabled, warnPct, blockPct)
+        # Build token detail
+        maxTok = ctxWindow.get("context_window_size", 0) or 0
+        totalInputTok = ctxWindow.get("total_input_tokens", 0) or 0
+        totalOutputTok = ctxWindow.get("total_output_tokens", 0) or 0
+        totalTok = totalInputTok + totalOutputTok
+        tokStr = ""
+        if maxTok > 0:
+            tokStr = f" {totalTok//1000}K/{maxTok//1000}K"
+        guardStr = ""
+        if warnPct or blockPct:
+            guardStr = f" w{warnPct}b{blockPct}"
+        ctxStr = f"ctx {contextPct}%{tokStr}{guardStr}"
+        if colorEnabled:
+            return f"[{bar}] {C_DIM}{ctxStr}{C_RESET}"
+        return f"[{bar}] {ctxStr}"
+
+    face, label = SL_RenderFull(sessionId, contextPct, statusData, config,
+                                 guardBlockPct=blockPct)
 
     # Assemble output
-    bar = SL_BuildBar(contextPct, barWidth, colorEnabled)
+    bar = SL_BuildBar(contextPct, barWidth, colorEnabled, warnPct, blockPct)
     parts = [face, f"[{bar}]"]
     if showLabel:
         parts.append(f"{label:<13}")
     if showContext:
-        ctxStr = f"ctx {contextPct}%"
+        guardStr = ""
+        if warnPct or blockPct:
+            guardStr = f" w{warnPct}b{blockPct}"
+        ctxStr = f"ctx {contextPct}%{guardStr}"
         if colorEnabled:
             parts.append(f"{C_DIM}| {ctxStr}{C_RESET}")
         else:

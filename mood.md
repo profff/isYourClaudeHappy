@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash(python:*), Read, Edit
-argument-hint: [on|off|basic|status|set|reset|dump]
+argument-hint: [on|off|context|status|set|reset|dump]
 description: Controle de la jauge d'humeur Claude Code
 ---
 
@@ -15,7 +15,7 @@ Gere la jauge d'humeur affichee dans la statusline de Claude Code.
 | `/mood` ou `/mood status` | Afficher l'etat actuel (mood, signaux, config) |
 | `/mood on` | Activer le mode full (hooks + statusline) |
 | `/mood off` | Desactiver completement la jauge |
-| `/mood basic` | Mode basique (statusline seule, pas de hooks) |
+| `/mood context` | Mode contexte seul : barre + tokens + guard, sans mood |
 | `/mood set <param> <value>` | Modifier un seuil ou parametre |
 | `/mood reset` | Remettre la session a zero (RAZ des compteurs) |
 | `/mood dump` | Afficher le state JSON brut de la session |
@@ -47,8 +47,8 @@ Le script setup est : `D:/Dev/AI_Bridge/CLAUDE_FEELINGS/mood/mood_setup.py`
    - Signaux accumules (tool success/failure, compaction count, prompt count)
    - Config active (mode, seuils)
 
-### Pour `/mood on`, `/mood off`, `/mood basic`
-Editer `D:/Dev/AI_Bridge/CLAUDE_FEELINGS/mood/config.json` : changer `"mode"` en `"full"`, `"off"`, ou `"basic"`.
+### Pour `/mood on`, `/mood off`, `/mood context`
+Editer `D:/Dev/AI_Bridge/CLAUDE_FEELINGS/mood/config.json` : changer `"mode"` en `"full"`, `"off"`, ou `"context"`.
 Confirmer le changement a l'utilisateur.
 
 ### Pour `/mood set <param> <value>`

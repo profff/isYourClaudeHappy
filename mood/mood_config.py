@@ -9,7 +9,7 @@ CONFIG_PATH = SCRIPT_DIR / "config.json"
 DEFAULT_CONFIG = {
     "mode": "full",
     "display": {
-        "bar_width": 6,
+        "bar_width": 20,
         "show_context": True,
         "show_label": True,
         "color_enabled": True,

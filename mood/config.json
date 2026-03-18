@@ -1,8 +1,8 @@
 {
-    "_comment": "Mood Gauge configuration - modes: off | basic | full",
-    "mode": "full",
+    "_comment": "Mood Gauge configuration - modes: off | context | full",
+    "mode": "context",
     "display": {
-        "bar_width": 6,
+        "bar_width": 20,
         "show_context": true,
         "show_label": true,
         "color_enabled": true

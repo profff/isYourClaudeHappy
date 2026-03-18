@@ -124,6 +124,23 @@ def CTXG_Evaluate(usedPct, config, sessionInfo=None):
     return "ok"
 
 
+def _getMaxTokensFromSessions():
+    """Find max_tokens from the most recent session file that has it."""
+    if not CONTEXT_SHARE_DIR.exists():
+        return 0
+    files = sorted(CONTEXT_SHARE_DIR.glob("*.json"),
+                   key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in files:
+        try:
+            info = json.loads(f.read_text(encoding="utf-8"))
+            maxTok = info.get("max_tokens", 0)
+            if maxTok and maxTok > 0:
+                return maxTok
+        except (json.JSONDecodeError, OSError):
+            pass
+    return 0
+
+
 def CTXG_CleanupOldFiles(maxAgeHours=48):
     """Remove stale context info files."""
     if not CONTEXT_SHARE_DIR.exists():
@@ -207,13 +224,20 @@ def hookMain():
     warnPct = sessionInfo.get("override_warn_pct", config["warn_pct"])
     blockPct = sessionInfo.get("override_block_pct", config["block_pct"])
 
+    # Build token detail string if available
+    maxTok = sessionInfo.get("max_tokens", 0)
+    totalTok = sessionInfo.get("total_tokens", 0)
+    tokDetail = ""
+    if maxTok > 0:
+        tokDetail = f" ~{totalTok//1000}K/{maxTok//1000}K tokens"
+
     if event == "UserPromptSubmit":
         # Can block before prompt is processed (cheapest)
         if level == "block":
             print(json.dumps({
                 "decision": "block",
                 "reason": (
-                    f"Context Guard: context at {usedPct}% "
+                    f"Context Guard: context at {usedPct}%{tokDetail} "
                     f"(limit: {blockPct}%). "
                     f"Run /compact to continue."
                 ),
@@ -221,13 +245,13 @@ def hookMain():
         elif level == "warn":
             print(json.dumps({
                 "additionalContext": (
-                    f"[CONTEXT GUARD] Context at {usedPct}% "
+                    f"[CONTEXT GUARD] Context at {usedPct}%{tokDetail} "
                     f"(warn: {warnPct}%, block: {blockPct}%). "
                     f"Consider running /compact soon. "
                     f"Briefly mention this to the user."
                 ),
                 "systemMessage": (
-                    f"Context Guard: {usedPct}% "
+                    f"Context Guard: {usedPct}%{tokDetail} "
                     f"(warn: {warnPct}%, block: {blockPct}%)"
                 ),
             }))
@@ -264,18 +288,27 @@ def cliMain():
         if CONTEXT_SHARE_DIR.exists():
             files = sorted(CONTEXT_SHARE_DIR.glob("*.json"),
                            key=lambda f: f.stat().st_mtime, reverse=True)
-            for f in files[:3]:
+            for f in files[:5]:
                 try:
                     info = json.loads(f.read_text(encoding="utf-8"))
                     sid = info.get("session_id", "?")[:8]
                     pct = info.get("used_percentage", 0)
                     age = time.time() - info.get("updated_at", 0)
+                    maxTok = info.get("max_tokens", 0)
+                    totalTok = info.get("total_tokens", 0)
+                    modelId = info.get("model_id", "")
+                    tokStr = ""
+                    if maxTok > 0:
+                        tokStr = f" ({totalTok//1000}K/{maxTok//1000}K)"
+                    elif totalTok > 0:
+                        tokStr = f" ({totalTok//1000}K/?)"
+                    modelStr = f" [{modelId}]" if modelId else ""
                     overrides = ""
                     if "override_warn_pct" in info or "override_block_pct" in info:
                         ow = info.get("override_warn_pct", "-")
                         ob = info.get("override_block_pct", "-")
                         overrides = f" [override: warn={ow}%, block={ob}%]"
-                    print(f"  Session {sid}...: {pct}% — {age:.0f}s ago{overrides}")
+                    print(f"  Session {sid}...: {pct}%{tokStr}{modelStr} — {age:.0f}s ago{overrides}")
                 except Exception:
                     pass
 
@@ -307,10 +340,40 @@ def cliMain():
             print("Usage: set [this|all] warn|block <pct>")
             return
         param = args[paramIdx].lower()
-        value = int(args[paramIdx + 1].rstrip("%"))
         if param not in ("warn", "block"):
             print(f"Unknown param: {param}. Use 'warn' or 'block'.")
             return
+        rawValue = args[paramIdx + 1].strip()
+        # Parse value:
+        #   "20%" → percentage
+        #   "250K"/"250k" → ktokens → convert to %
+        #   "20" (bare number < 100) → percentage (compat)
+        #   "250000" (bare number >= 100) → tokens → convert to %
+        if rawValue.endswith("%"):
+            value = int(rawValue.rstrip("%"))
+        elif rawValue.upper().endswith("K"):
+            tokValue = int(rawValue[:-1]) * 1000
+            maxTok = _getMaxTokensFromSessions()
+            if maxTok <= 0:
+                print(f"Cannot convert {rawValue} tokens to %: no session with max_tokens found yet.")
+                print("Run a prompt first so the statusline populates the context window size.")
+                return
+            value = round(tokValue / maxTok * 100)
+            print(f"  {tokValue//1000}K tokens = {value}% of {maxTok//1000}K context window")
+        else:
+            bareValue = int(rawValue)
+            if bareValue < 100:
+                # Bare number < 100 → treat as percentage (backward compat)
+                value = bareValue
+            else:
+                # Bare number >= 100 → treat as tokens
+                maxTok = _getMaxTokensFromSessions()
+                if maxTok <= 0:
+                    print(f"Cannot convert {rawValue} tokens to %: no session with max_tokens found yet.")
+                    print("Run a prompt first so the statusline populates the context window size.")
+                    return
+                value = round(bareValue / maxTok * 100)
+                print(f"  {bareValue//1000}K tokens = {value}% of {maxTok//1000}K context window")
 
         if scope == "this":
             # Current session only — need session_id from env

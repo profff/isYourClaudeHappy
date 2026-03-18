@@ -82,18 +82,25 @@ def MOOD_ComputeArousal(signals: dict, contextPct: float, config: dict) -> float
     """Compute arousal [0, 1] from signals and context window state.
 
     Components:
-      - Context window pressure (accelerates above 50%)
+      - Context window pressure (normalized to guard block threshold)
       - Tool call frequency (last 2 minutes)
       - Session fatigue damping (kicks in after threshold)
     """
     now = time.time()
     thresholds = config.get("thresholds", {})
 
-    # Context pressure -> [0, 0.4]
-    if contextPct < 50:
-        arousalFromContext = contextPct / 100.0 * 0.2
+    # Normalize context% to guard block threshold (e.g. 15% / 20% block = 75%)
+    guardBlockPct = signals.get("guard_block_pct", 0)
+    if guardBlockPct > 0:
+        effectivePct = min(100.0, contextPct / guardBlockPct * 100.0)
     else:
-        arousalFromContext = 0.1 + (contextPct - 50) / 50.0 * 0.3
+        effectivePct = contextPct
+
+    # Context pressure -> [0, 0.4]
+    if effectivePct < 50:
+        arousalFromContext = effectivePct / 100.0 * 0.2
+    else:
+        arousalFromContext = 0.1 + (effectivePct - 50) / 50.0 * 0.3
 
     # Tool call frequency (last 2 min) -> [0, 0.3]
     recentTimestamps = [
